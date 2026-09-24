@@ -1,0 +1,76 @@
+@startuml Событийная архитектура NovaMarket Container
+!NEW_C4_STYLE=1
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Событийная архитектура NovaMarket Container
+
+LAYOUT_TOP_DOWN()
+SHOW_PERSON_OUTLINE()
+
+Person(customer, "Покупатель", "Просматривает каталог, управляет корзиной, оформляет заказ и отслеживает его статус.")
+Person(seller, "Продавец", "Размещает товары и получает уведомление о подготовке товара к отправке.")
+
+System_Ext(payment_gateway, "Платёжный шлюз", "Обрабатывает платежи и привязку карт.")
+System_Ext(logistics_provider, "Логистический провайдер", "Принимает заявки на доставку и предоставляет информацию о доставке.")
+
+System_Boundary(nova_market, "Маркетплейс NovaMarket") {
+    Container(mobile_app, "Мобильное приложение", "Мобильный клиент", "Клиентский канал покупателей и продавцов.")
+    Container(nginx, "NGINX", "API Gateway / reverse proxy", "Маршрутизирует API-запросы мобильного приложения.")
+
+    Container(product_catalog, "Product Catalog Service", "Микросервис", "Управляет товарами, категориями, ценами, фотографиями, описаниями, рейтингами и отзывами для каталога.")
+    Container(shopping_cart, "Shopping Cart Service", "Микросервис", "Хранит выбранные покупателем товары до оформления заказа.")
+    Container(order, "Order Service", "Микросервис", "Хранит состав, сумму, адрес, способ получения, способ оплаты и статус заказа; начинает хореографию оформления.")
+    Container(inventory, "Inventory Service", "Микросервис", "Проверяет наличие, резервирует товары и снимает резервирование при отмене заказа.")
+    Container(payment, "Payment Service", "Микросервис", "Интегрируется с платёжным шлюзом, поддерживает привязку карт и фиксирует результаты оплаты.")
+    Container(delivery, "Delivery Service", "Микросервис", "Создаёт заявки на доставку и ведёт трек-номер, предполагаемую дату и статус доставки.")
+    Container(seller_notification, "Seller Notification Service", "Микросервис", "Уведомляет продавца после успешной оплаты о необходимости подготовить товар к отправке.")
+
+    ContainerQueue(kafka, "Kafka", "Брокер сообщений", "Передаёт события между микросервисами.")
+
+    Container_Boundary(kafka_topics, "Топики Kafka") {
+        SystemQueue(product_catalog_topic, "Топик product-catalog", "события каталога товаров.")
+        SystemQueue(order_topic, "Топик order", "события заказа.")
+        SystemQueue(inventory_topic, "Топик inventory", "события наличия и резервирования.")
+        SystemQueue(payment_topic, "Топик payment", "события оплаты, кроме успешной оплаты.")
+        SystemQueue(payment_succeeded_topic, "Топик payment-succeeded", "событие успешной оплаты.")
+        SystemQueue(delivery_topic, "Топик delivery", "события доставки.")
+    }
+
+}
+
+Rel(customer, mobile_app, "Использует")
+Rel(seller, mobile_app, "Использует")
+Rel(mobile_app, nginx, "Вызывает API", "HTTPS")
+Rel(mobile_app, payment_gateway, "Переходит на платёжную страницу", "HTTPS")
+
+Rel(nginx, product_catalog, "Маршрутизирует API-запросы", "HTTPS")
+Rel(nginx, shopping_cart, "Маршрутизирует API-запросы", "HTTPS")
+Rel(nginx, order, "Маршрутизирует запрос оформления заказа с составом корзины", "HTTPS")
+Rel(nginx, payment, "Маршрутизирует API-запросы", "HTTPS")
+
+Rel(product_catalog, product_catalog_topic, "Публикует")
+Rel(product_catalog_topic, shopping_cart, "Потребляет")
+
+Rel(order, order_topic, "Публикует")
+Rel(order_topic, inventory, "Потребляет")
+
+Rel(inventory, inventory_topic, "Публикует")
+Rel(inventory_topic, payment, "Потребляет")
+Rel(inventory_topic, order, "Потребляет")
+Rel(inventory_topic, product_catalog, "Потребляет")
+
+Rel(payment, payment_gateway, "Обрабатывает оплату и привязку карты", "HTTPS")
+Rel(payment, payment_topic, "Публикует")
+Rel(payment_topic, order, "Потребляет")
+Rel(payment, payment_succeeded_topic, "Публикует")
+Rel(payment_succeeded_topic, order, "Потребляет")
+Rel(payment_succeeded_topic, delivery, "Потребляет")
+Rel(payment_succeeded_topic, seller_notification, "Потребляет")
+
+Rel(delivery, logistics_provider, "Передаёт заявку и получает информацию о доставке", "HTTPS")
+Rel(delivery, delivery_topic, "Публикует")
+Rel(delivery_topic, order, "Потребляет")
+
+Rel(seller_notification, seller, "Уведомляет о необходимости подготовить товар к отправке")
+@enduml

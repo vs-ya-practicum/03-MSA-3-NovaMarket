@@ -1,0 +1,87 @@
+@startuml Успешное оформление заказа — Saga-хореография Sequence
+
+title Успешное оформление заказа — Saga-хореография Sequence
+
+box "Клиентский канал" #DCEEFF
+    actor "Покупатель" as customer
+    boundary "Мобильное приложение" as mobile_app
+    control "NGINX" as nginx
+end box
+
+box "Ядро приложения" #E2F0D9
+    control "Order Service" as order
+    queue "Топик order" as order_topic
+    control "Inventory Service" as inventory
+    queue "Топик inventory" as inventory_topic
+    control "Payment Service" as payment
+    queue "Топик payment" as payment_topic
+    queue "Топик payment-succeeded" as payment_succeeded_topic
+    control "Seller Notification Service" as seller_notification
+    control "Delivery Service" as delivery
+end box
+
+box "Внешние участники" #EADCF8
+    boundary "Платёжный шлюз" as payment_gateway
+    actor "Продавец" as seller
+    boundary "Логистический провайдер" as logistics_provider
+end box
+
+== Подтверждение заказа ==
+customer -> mobile_app : Подтверждает состав заказа
+mobile_app -> nginx : POST /orders/checkout
+nginx -> order : Передаёт запрос оформления
+order -> order_topic : OrderConfirmedEvent
+order_topic -> inventory : OrderConfirmedEvent
+nginx --> mobile_app : 202 Accepted, orderId
+
+== Резервирование и начало оплаты ==
+inventory -> inventory : Резервирует товары
+inventory -> inventory_topic : InventoryReservedEvent
+par Обновление статуса заказа
+    inventory_topic -> order : InventoryReservedEvent
+    order -> order : Устанавливает статус\n«Ожидает оплаты»
+else Инициирование оплаты
+    inventory_topic -> payment : InventoryReservedEvent
+    payment -> payment_gateway : POST /payments
+    payment_gateway --> payment : paymentUrl
+    payment -> payment_topic : PaymentInitiatedEvent
+    payment_topic -> order : PaymentInitiatedEvent(paymentUrl)
+    order -> order : Сохраняет paymentUrl
+end
+
+== Оплата ==
+alt Карта не привязана
+    customer -> mobile_app : Переходит к оплате
+    mobile_app -> nginx : GET /orders/{orderId}
+    nginx -> order : Запрашивает статус и paymentUrl
+    order --> nginx : Статус и paymentUrl
+    nginx --> mobile_app : Статус и paymentUrl
+    mobile_app -> payment_gateway : GET {paymentUrl}
+    customer -> payment_gateway : Вводит данные карты
+else Карта привязана
+    payment -> payment_gateway : POST /payments/{id}/charge
+end
+payment_gateway -> payment : POST /payment-notifications (успех)
+payment -> payment_succeeded_topic : PaymentSucceededEvent
+
+== Подготовка доставки ==
+par Обновление заказа
+    payment_succeeded_topic -> order : PaymentSucceededEvent
+    order -> order : Устанавливает статус\n«Оплачен и готовится к отправке»
+else Создание доставки
+    payment_succeeded_topic -> delivery : PaymentSucceededEvent
+    delivery -> logistics_provider : POST /delivery-requests
+    logistics_provider --> delivery : 201 Created
+else Уведомление продавца
+    payment_succeeded_topic -> seller_notification : PaymentSucceededEvent
+    seller_notification -> seller : Уведомляет о\nподготовке товара
+end
+
+legend right
+|= Цвет |= Группа |
+|<#DCEEFF> | Клиентский канал |
+|<#E2F0D9> | Ядро приложения |
+|<#EADCF8> | Внешние участники |
+endlegend
+
+@enduml
