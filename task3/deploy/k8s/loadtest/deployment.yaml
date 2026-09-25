@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: locust
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: locust
+  template:
+    metadata:
+      labels:
+        app: locust
+      annotations:
+        sidecar.istio.io/inject: 'false'
+    spec:
+      containers:
+        - name: locust
+          image: locustio/locust:2.46.6
+          args:
+            - -f
+            - /mnt/locust/locustfile.py
+            - --host
+            - http://scaletestapp:8080
+          resources:
+            requests:
+              cpu: 250m
+              memory: 250Mi
+            limits:
+              cpu: 500m
+              memory: 500Mi
+          ports:
+            - containerPort: 8089
+          volumeMounts:
+            - name: locustfile
+              mountPath: /mnt/locust
+      volumes:
+        - name: locustfile
+          configMap:
+            name: locustfile

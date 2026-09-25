@@ -11,4 +11,4 @@ spec:
     app: scaletestapp
   ports:
     - port: 8080
-      targetPort: 808
+      targetPort: 8080
