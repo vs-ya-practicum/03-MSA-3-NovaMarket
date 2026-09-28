@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: circuit-breaker-locust
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: circuit-breaker-locust
+  template:
+    metadata:
+      labels:
+        app: circuit-breaker-locust
+    spec:
+      containers:
+        - name: locust
+          image: locustio/locust:2.46.6
+          args:
+            - -f
+            - /mnt/locust/locustfile.py
+            - --host=http://circuit-breaker:8080
+            - --web-host=0.0.0.0
+          ports:
+            - containerPort: 8089
+          volumeMounts:
+            - name: locustfile
+              mountPath: /mnt/locust
+      volumes:
+        - name: locustfile
+          configMap:
+            name: circuit-breaker-locustfile

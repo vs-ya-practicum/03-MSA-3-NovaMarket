@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: circuit-breaker-locust
+spec:
+  selector:
+    app: circuit-breaker-locust
+  ports:
+    - port: 8089
+      targetPort: 8089
