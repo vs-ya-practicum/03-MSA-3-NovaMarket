@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rate-limiter-locust
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rate-limiter-locust
+  template:
+    metadata:
+      labels:
+        app: rate-limiter-locust
+    spec:
+      containers:
+        - name: locust
+          image: locustio/locust:2.46.6
+          args:
+            - -f
+            - /mnt/locust/locustfile.py
+            - --host=http://rate-limiter
+            - --web-host=0.0.0.0
+          ports:
+            - containerPort: 8089
+          volumeMounts:
+            - name: locustfile
+              mountPath: /mnt/locust
+      volumes:
+        - name: locustfile
+          configMap:
+            name: rate-limiter-locustfile
