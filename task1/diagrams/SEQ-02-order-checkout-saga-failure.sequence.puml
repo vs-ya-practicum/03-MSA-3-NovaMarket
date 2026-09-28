@@ -1,0 +1,80 @@
+@startuml Ошибочные сценарии оформления заказа — Saga-хореография Sequence
+
+title Ошибочные сценарии оформления заказа — Saga-хореография Sequence
+
+box "Клиентский канал" #DCEEFF
+    actor "Покупатель" as customer
+    boundary "Мобильное приложение" as mobile_app
+    control "NGINX" as nginx
+end box
+
+box "Ядро приложения" #E2F0D9
+    control "Order Service" as order
+    queue "Топик order" as order_topic
+    control "Inventory Service" as inventory
+    queue "Топик inventory" as inventory_topic
+    control "Payment Service" as payment
+    queue "Топик payment" as payment_topic
+    control "Product Catalog Service" as product_catalog
+    queue "Топик product-catalog" as product_catalog_topic
+    control "Shopping Cart Service" as shopping_cart
+end box
+
+box "Внешние участники" #EADCF8
+    boundary "Платёжный шлюз" as payment_gateway
+end box
+
+== Подтверждение заказа ==
+customer -> mobile_app : Подтверждает состав заказа
+mobile_app -> nginx : POST /orders/checkout
+nginx -> order : Передаёт запрос оформления
+order -> order_topic : OrderConfirmedEvent
+order_topic -> inventory : OrderConfirmedEvent
+nginx --> mobile_app : 202 Accepted, orderId
+
+alt Товара недостаточно
+    inventory -> inventory_topic : InventoryReservationFailedEvent
+    inventory_topic -> order : InventoryReservationFailedEvent
+    order -> order : Фиксирует невозможность оформления заказа
+    mobile_app -> nginx : GET /orders/{orderId}
+    nginx -> order : Запрашивает статус заказа
+    order --> nginx : Заказ не оформлен
+    nginx --> mobile_app : Заказ не оформлен
+else Платёж отклонён
+    inventory -> inventory : Резервирует товары
+    inventory -> inventory_topic : InventoryReservedEvent
+    inventory_topic -> order : InventoryReservedEvent
+    order -> order : Устанавливает статус «Ожидает оплаты»
+    inventory_topic -> payment : InventoryReservedEvent
+    payment -> payment_gateway : POST /payments
+    payment_gateway --> payment : paymentUrl
+    payment -> payment_topic : PaymentInitiatedEvent
+    payment_topic -> order : PaymentInitiatedEvent
+    payment_gateway -> payment : POST /payment-notifications (отказ)
+    payment -> payment_topic : PaymentFailedEvent
+    payment_topic -> order : PaymentFailedEvent
+    order -> order : Отменяет заказ
+    order -> order_topic : OrderCancelledAfterPaymentFailureEvent
+    order_topic -> inventory : OrderCancelledAfterPaymentFailureEvent
+    group Компенсация: освобождение резерва
+        inventory -> inventory : Освобождает резерв
+        inventory -> inventory_topic : InventoryReservationReleasedEvent
+        inventory_topic -> product_catalog : InventoryReservationReleasedEvent
+        product_catalog -> product_catalog : Обновляет доступность товара
+        product_catalog -> product_catalog_topic : ProductAvailabilityChangedEvent
+        product_catalog_topic -> shopping_cart : ProductAvailabilityChangedEvent
+    end
+    mobile_app -> nginx : GET /orders/{orderId}
+    nginx -> order : Запрашивает статус заказа
+    order --> nginx : Заказ отменён
+    nginx --> mobile_app : Заказ отменён
+end
+
+legend right
+|= Цвет |= Группа |
+|<#DCEEFF> | Клиентский канал |
+|<#E2F0D9> | Ядро приложения |
+|<#EADCF8> | Внешние участники |
+endlegend
+
+@enduml

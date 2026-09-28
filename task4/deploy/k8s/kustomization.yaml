@@ -1,0 +1,28 @@
+namespace: scaletestapp
+
+resources:
+  - rate-limiter.deployment.yaml
+  - rate-limiter.service.yaml
+
+  - rate-limiter-locust.deployment.yaml
+  - rate-limiter-locust.service.yaml
+
+  - circuit-breaker.deployment.yaml
+  - circuit-breaker.service.yaml
+
+  - circuit-breaker-locust.deployment.yaml
+  - circuit-breaker-locust.service.yaml
+
+configMapGenerator:
+  - name: rate-limiter-config
+    files:
+      - nginx.conf=../rate-limiter.nginx.conf
+  - name: rate-limiter-locustfile
+    files:
+      - locustfile.py=../loadtest/rate_limiter.py
+  - name: circuit-breaker-config
+    files:
+      - nginx.conf=../circuit-breaker.nginx.conf
+  - name: circuit-breaker-locustfile
+    files:
+      - locustfile.py=../loadtest/circuit_breaker.py
